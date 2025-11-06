@@ -1,22 +1,25 @@
-# Ford Fiorasi – Procesador de Antecedentes Disciplinarios
+# ⚖️ Ford Fiorasi – Procesador de Antecedentes Disciplinarios
 
-Aplicación web institucional para RRHH/Legales que procesa documentos disciplinarios (.docx y .pdf), extrae datos clave y genera:
+Aplicación web institucional para automatizar la gestión de antecedentes disciplinarios (llamados de atención, apercibimientos, descargos, etc.) del personal de Ford Fiorasi.
 
-- Base de datos Excel (base completa + resumen por empleado)
-- ZIP opcional con carpetas individuales por empleado
-- OCR español integrado (sin necesidad de instalación local)
+## 🚀 Funcionalidades principales
+- Procesa archivos `.docx` y `.pdf` automáticamente.
+- OCR en español integrado (sin necesidad de instalación).
+- Detecta nombre, fecha, tipo de antecedente, descripción y si hay descargo.
+- Genera:
+  - Excel con base completa y resumen por empleado.
+  - Carpetas por empleado con sus archivos.
+  - ZIP completo descargable.
+- Selector de color institucional (rueda de ajustes).
+- Branding Ford Fiorasi con logo y colores corporativos.
 
-## 🚀 Despliegue rápido
-1. Subí esta carpeta completa a un repositorio GitHub.
-2. Entrá en [https://share.streamlit.io](https://share.streamlit.io).
-3. Conectá tu repo → seleccioná `app.py` → Deploy.
-4. ¡Listo! El OCR y los colores institucionales se cargan automáticamente.
+## 💻 Cómo usar
+1. Sube todos los archivos desde el navegador.
+2. Presiona **“Procesar antecedentes”**.
+3. Descarga el **Excel** o el **ZIP completo**.
 
-## 🎨 Colores
-- Azul institucional Ford: `#003399`
-- Blanco: `#FFFFFF`
-
-## 🔒 Uso interno
-Los documentos procesados contienen datos personales. Usar en entorno seguro o privado.
-
-Desarrollado para **Ford Fiorasi**.
+## 🌐 Despliegue en Streamlit Cloud
+1. Crea un nuevo repositorio en GitHub.
+2. Sube los archivos incluidos.
+3. Entra a [https://share.streamlit.io](https://share.streamlit.io) y conecta el repositorio.
+4. Espera a que instale dependencias — la app estará lista en minutos.
