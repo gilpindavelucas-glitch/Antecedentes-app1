@@ -1,0 +1,9 @@
+streamlit
+docx2txt
+PyMuPDF
+PyPDF2
+pytesseract
+Pillow
+pandas
+openpyxl
+dateparser
