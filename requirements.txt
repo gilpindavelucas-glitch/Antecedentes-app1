@@ -7,3 +7,5 @@ Pillow
 pandas
 openpyxl
 dateparser
+python-docx
+pdf2image
