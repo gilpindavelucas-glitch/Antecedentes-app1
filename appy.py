@@ -1,199 +1,126 @@
 import streamlit as st
-from io import BytesIO
-import os, re, shutil, datetime, pandas as pd, zipfile
-from pathlib import Path
-import docx2txt
-import fitz
-from PIL import Image
+import pandas as pd
 import pytesseract
-import dateparser
-import PyPDF2
+from pytesseract import Output
+from pdf2image import convert_from_bytes
+from docx import Document
+import tempfile, os, zipfile, io, re
+from datetime import datetime
+from PIL import Image
 
-# ----- Configuración -----
-DEFAULT_BLUE = "#003399"
-LOGO_PATH = "logo_ford_fiorasi.png"
-APP_TITLE = "Ford Fiorasi – Procesador de Antecedentes Disciplinarios"
-OUTPUT_FOLDER = "procesados_output"
-LANG_OCR = "spa"
-# --------------------------
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(
+    page_title="Ford Fiorasi – Procesador de Antecedentes Disciplinarios",
+    page_icon="⚖️",
+    layout="wide",
+)
 
-st.set_page_config(page_title=APP_TITLE, layout="wide", page_icon=":briefcase:")
+# --- COLORES BASE ---
+if "base_color" not in st.session_state:
+    st.session_state.base_color = "#003399"  # Azul Ford
 
-if "color" not in st.session_state:
-    st.session_state.color = DEFAULT_BLUE
-if "use_ocr" not in st.session_state:
-    st.session_state.use_ocr = True
+# --- BARRA SUPERIOR ---
+col_logo, col_title, col_conf = st.columns([1, 6, 1])
+with col_logo:
+    st.image("logo_ford_fiorasi.png", width=140)
+with col_title:
+    st.markdown(
+        f"<h2 style='color:{st.session_state.base_color};'>Ford Fiorasi – Procesador de Antecedentes Disciplinarios</h2>",
+        unsafe_allow_html=True)
+with col_conf:
+    with st.expander("⚙️ Ajustes"):
+        color = st.color_picker("Color institucional", st.session_state.base_color)
+        if color:
+            st.session_state.base_color = color
 
-# ---------- Encabezado ----------
-col1, col2 = st.columns([1,6])
-with col1:
-    st.image(LOGO_PATH, width=180)
-with col2:
-    st.markdown(f"<h1 style='color:{st.session_state.color};margin-left:20px'>{APP_TITLE}</h1>", unsafe_allow_html=True)
+st.write("---")
 
-# ---------- Configuración ----------
-with st.expander("⚙️ Ajustes / Configuración"):
-    st.session_state.color = st.color_picker("Color institucional", st.session_state.color)
-    st.session_state.use_ocr = st.checkbox("Activar OCR español para PDF escaneados", True)
+# --- SUBIR ARCHIVOS ---
+st.subheader("📂 Seleccione los archivos (.pdf / .docx)")
+uploaded_files = st.file_uploader("Arrastre o seleccione múltiples archivos", type=["pdf", "docx"], accept_multiple_files=True)
 
-st.markdown("---")
-st.write("Subí tus archivos (.docx o .pdf) y presioná **Procesar antecedentes**.")
-
-uploaded_files = st.file_uploader("Archivos a procesar", accept_multiple_files=True, type=["pdf", "docx"])
-
-# ---------- Funciones auxiliares ----------
-def extract_text_docx(bts):
-    tmp = "tmp.docx"
-    with open(tmp, "wb") as f:
-        f.write(bts)
-    text = docx2txt.process(tmp)
-    os.remove(tmp)
-    return text or ""
-
-def extract_text_pdf(bts):
-    text = ""
+# --- FUNCIONES AUXILIARES ---
+def extract_text_from_docx(file):
     try:
-        reader = PyPDF2.PdfReader(BytesIO(bts))
-        for p in reader.pages:
-            txt = p.extract_text() or ""
-            text += txt + "\n"
-    except:
-        pass
-    if text.strip():
+        doc = Document(file)
+        return "\n".join(p.text for p in doc.paragraphs)
+    except Exception as e:
+        return f"ERROR_DOCX: {e}"
+
+def extract_text_from_pdf(file_bytes):
+    try:
+        pages = convert_from_bytes(file_bytes)
+        text = ""
+        for page in pages:
+            text += pytesseract.image_to_string(page, lang="spa")
         return text
-    if st.session_state.use_ocr:
-        try:
-            doc = fitz.open(stream=bts, filetype="pdf")
-            alltext = []
-            for page in doc:
-                pix = page.get_pixmap(matrix=fitz.Matrix(2,2))
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                t = pytesseract.image_to_string(img, lang=LANG_OCR)
-                alltext.append(t)
-            return "\n".join(alltext)
-        except Exception as e:
-            st.error(f"OCR falló: {e}")
-            return ""
-    return ""
+    except Exception as e:
+        return f"ERROR_PDF: {e}"
 
-def detect_date(text):
-    m = re.search(r"(\d{1,2}\s+de\s+[A-Za-zñáéíóú]+\s+de\s+\d{4})", text)
-    if m:
-        dt = dateparser.parse(m.group(1), languages=['es'])
-        if dt:
-            return dt.date().isoformat()
-    m = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text)
-    if m:
-        return m.group(1)
-    return ""
+def extract_data_from_text(text):
+    data = {}
+    nombre = re.findall(r"([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)", text)
+    fecha = re.findall(r"\d{1,2}/\d{1,2}/\d{2,4}", text)
+    tipo = re.findall(r"(llamado de atención|apercibimiento|descargo|contestación)", text.lower())
+    data["Empleado"] = nombre[0] if nombre else "No detectado"
+    data["Fecha"] = fecha[0] if fecha else ""
+    data["Tipo"] = tipo[0].capitalize() if tipo else "No identificado"
+    data["Descripción"] = text[:200].replace("\n", " ") + "..."
+    data["Descargo"] = "Sí" if "descargo" in text.lower() else "No"
+    return data
 
-def detect_type(text):
-    t = text.lower()
-    if "llamado" in t and "atencion" in t:
-        return "Llamado de atención"
-    if "apercib" in t:
-        return "Apercibimiento"
-    if "descargo" in t and "solic" in t:
-        return "Solicitud de descargo"
-    if "contestac" in t or "respuesta" in t:
-        return "Contestación"
-    return "No determinado"
+# --- PROCESAMIENTO ---
+if st.button("🚀 Procesar antecedentes") and uploaded_files:
+    registros = []
+    output_dir = tempfile.mkdtemp()
 
-def detect_response(text):
-    return "Sí" if any(k in text.lower() for k in ["descargo", "contestac"]) else "No"
-
-def detect_name(text):
-    m = re.search(r"(Apellido.?y.?Nombre.?[:\s]+)([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚñáéíóú\s]+)", text, flags=re.IGNORECASE)
-    if m:
-        return m.group(2).strip()
-    m = re.search(r"(Sr\.|Sra\.|Señor|Señora)\s+([A-Z][a-zA-ZñáéíóúÁÉÍÓÚ\s]+)", text)
-    if m:
-        return m.group(2).strip()
-    return "SIN_NOMBRE"
-
-def resumen_texto(text):
-    parts = re.split(r"\n\s*\n", text)
-    for p in parts:
-        if len(p.strip()) > 50:
-            return p.strip().replace("\n", " ")
-    return text[:200]
-
-# ---------- Procesamiento ----------
-if st.button("Procesar antecedentes"):
-    if not uploaded_files:
-        st.error("Debe subir al menos un archivo.")
-    else:
-        out_dir = Path(OUTPUT_FOLDER)
-        out_dir.mkdir(exist_ok=True)
-
-        registros = []
-        agrupado = {}
-        progress = st.progress(0)
-
-        for i, f in enumerate(uploaded_files):
-            content = f.read()
-            if f.name.lower().endswith(".docx"):
-                texto = extract_text_docx(content)
+    for file in uploaded_files:
+        with st.spinner(f"Procesando {file.name}..."):
+            if file.name.endswith(".docx"):
+                text = extract_text_from_docx(file)
             else:
-                texto = extract_text_pdf(content)
+                text = extract_text_from_pdf(file.read())
 
-            nombre = detect_name(texto)
-            fecha = detect_date(texto)
-            tipo = detect_type(texto)
-            desc = resumen_texto(texto)
-            resp = detect_response(texto)
+            if "ERROR_" in text:
+                st.error(f"❌ No se pudo leer {file.name}.")
+                continue
 
-            carpeta = out_dir / re.sub(r"[^\w\s-]", "_", nombre)
-            carpeta.mkdir(exist_ok=True)
-            with open(carpeta / f.name, "wb") as x:
-                x.write(content)
+            datos = extract_data_from_text(text)
+            registros.append(datos)
 
-            registros.append({
-                "Apellido y Nombre": nombre,
-                "Fecha": fecha,
-                "Tipo": tipo,
-                "Descripción breve": desc,
-                "Contestación/Descargo": resp,
-                "Archivo": f.name
-            })
-            agrupado.setdefault(nombre, []).append({
-                "tipo": tipo, "fecha": fecha, "desc": desc
-            })
-            progress.progress((i+1)/len(uploaded_files))
+            emp_folder = os.path.join(output_dir, datos["Empleado"].replace(" ", "_"))
+            os.makedirs(emp_folder, exist_ok=True)
+            with open(os.path.join(emp_folder, file.name), "wb") as f:
+                f.write(file.getbuffer())
 
-        df = pd.DataFrame(registros).sort_values(by="Apellido y Nombre")
-        resumen = []
-        for n, docs in agrupado.items():
-            tipos = ", ".join(sorted(set(d["tipo"] for d in docs)))
-            ult = max([d["fecha"] for d in docs if d["fecha"]], default="")
-            sint = " | ".join(d["desc"][:100] for d in docs)
-            resumen.append({
-                "Apellido y Nombre": n,
-                "Cantidad": len(docs),
-                "Tipos": tipos,
-                "Última fecha": ult,
-                "Síntesis": sint
-            })
-        df_resumen = pd.DataFrame(resumen).sort_values(by="Apellido y Nombre")
+    if registros:
+        df = pd.DataFrame(registros)
+        df = df.sort_values(by="Empleado")
+        resumen = df.groupby("Empleado").agg({
+            "Tipo": lambda x: ", ".join(sorted(set(x))),
+            "Fecha": "last",
+            "Descripción": lambda x: " | ".join(x)[:500]
+        }).reset_index()
+        resumen["Cantidad"] = df.groupby("Empleado")["Tipo"].count().values
 
-        year = datetime.date.today().year
-        excel_name = f"FordFiorasi_Antecedentes_Base_{year}.xlsx"
-        excel_path = out_dir / excel_name
-        with pd.ExcelWriter(excel_path) as w:
-            df.to_excel(w, sheet_name="Base completa", index=False)
-            df_resumen.to_excel(w, sheet_name="Resumen por empleado", index=False)
+        año = datetime.now().year
+        excel_name = f"FordFiorasi_Antecedentes_Base_{año}.xlsx"
+        excel_path = os.path.join(output_dir, excel_name)
+        with pd.ExcelWriter(excel_path) as writer:
+            df.to_excel(writer, sheet_name="Base Completa", index=False)
+            resumen.to_excel(writer, sheet_name="Resumen por Empleado", index=False)
 
-        st.success("Procesamiento finalizado ✅")
+        # Descargar Excel
         with open(excel_path, "rb") as f:
-            data = f.read()
-        st.download_button("📘 Descargar Excel", data, file_name=excel_name)
+            st.download_button("⬇️ Descargar Excel", data=f, file_name=excel_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-        zip_io = BytesIO()
-        with zipfile.ZipFile(zip_io, "w", zipfile.ZIP_DEFLATED) as z:
-            z.write(excel_path, excel_name)
-            for root, dirs, files in os.walk(out_dir):
+        # Generar ZIP completo
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
+            for root, _, files in os.walk(output_dir):
                 for file in files:
-                    fp = os.path.join(root, file)
-                    z.write(fp, os.path.relpath(fp, out_dir))
-        zip_io.seek(0)
-        st.download_button("📦 Descargar ZIP completo (Excel + carpetas)", zip_io, file_name=f"FordFiorasi_Completo_{year}.zip")
+                    z.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), output_dir))
+        st.download_button("🗂️ Descargar ZIP (Excel + Carpetas)", data=zip_buffer.getvalue(), file_name="FordFiorasi_Procesados.zip")
+
+    else:
+        st.warning("⚠️ No se procesaron archivos válidos.")
