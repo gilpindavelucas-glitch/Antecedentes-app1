@@ -4,7 +4,7 @@ import pytesseract
 from pytesseract import Output
 from pdf2image import convert_from_bytes
 from docx import Document
-import tempfile, os, zipfile, io, re
+import tempfile, os, zipfile, io, re, subprocess
 from datetime import datetime
 from PIL import Image
 
@@ -19,7 +19,7 @@ st.set_page_config(
 if "base_color" not in st.session_state:
     st.session_state.base_color = "#003399"  # Azul Ford
 
-# --- BARRA SUPERIOR ---
+# --- ENCABEZADO ---
 col_logo, col_title, col_conf = st.columns([1, 6, 1])
 with col_logo:
     st.image("logo_ford_fiorasi.png", width=140)
@@ -36,10 +36,24 @@ with col_conf:
 st.write("---")
 
 # --- SUBIR ARCHIVOS ---
-st.subheader("📂 Seleccione los archivos (.pdf / .docx)")
-uploaded_files = st.file_uploader("Arrastre o seleccione múltiples archivos", type=["pdf", "docx"], accept_multiple_files=True)
+st.subheader("📂 Seleccione los archivos (.pdf / .doc / .docx)")
+uploaded_files = st.file_uploader("Arrastre o seleccione múltiples archivos", type=["pdf", "docx", "doc"], accept_multiple_files=True)
 
 # --- FUNCIONES AUXILIARES ---
+def convert_doc_to_docx(doc_file):
+    """Convierte archivos .doc antiguos a .docx usando LibreOffice."""
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "input.doc")
+            output_path = os.path.join(tmpdir, "input.docx")
+            with open(input_path, "wb") as f:
+                f.write(doc_file.read())
+            subprocess.run(["soffice", "--headless", "--convert-to", "docx", "--outdir", tmpdir, input_path], check=True)
+            return output_path
+    except Exception as e:
+        st.error(f"❌ Error al convertir .doc: {e}")
+        return None
+
 def extract_text_from_docx(file):
     try:
         doc = Document(file)
@@ -76,8 +90,16 @@ if st.button("🚀 Procesar antecedentes") and uploaded_files:
 
     for file in uploaded_files:
         with st.spinner(f"Procesando {file.name}..."):
-            if file.name.endswith(".docx"):
+            file_ext = file.name.lower().split(".")[-1]
+            if file_ext == "docx":
                 text = extract_text_from_docx(file)
+            elif file_ext == "doc":
+                converted = convert_doc_to_docx(file)
+                if converted:
+                    text = extract_text_from_docx(converted)
+                else:
+                    st.error(f"No se pudo convertir {file.name}")
+                    continue
             else:
                 text = extract_text_from_pdf(file.read())
 
@@ -110,11 +132,9 @@ if st.button("🚀 Procesar antecedentes") and uploaded_files:
             df.to_excel(writer, sheet_name="Base Completa", index=False)
             resumen.to_excel(writer, sheet_name="Resumen por Empleado", index=False)
 
-        # Descargar Excel
         with open(excel_path, "rb") as f:
             st.download_button("⬇️ Descargar Excel", data=f, file_name=excel_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-        # Generar ZIP completo
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
             for root, _, files in os.walk(output_dir):
