@@ -4,7 +4,8 @@ import pytesseract
 from pytesseract import Output
 from pdf2image import convert_from_bytes
 from docx import Document
-import tempfile, os, zipfile, io, re, subprocess
+import textract
+import tempfile, os, zipfile, io, re
 from datetime import datetime
 from PIL import Image
 
@@ -40,28 +41,27 @@ st.subheader("📂 Seleccione los archivos (.pdf / .doc / .docx)")
 uploaded_files = st.file_uploader("Arrastre o seleccione múltiples archivos", type=["pdf", "docx", "doc"], accept_multiple_files=True)
 
 # --- FUNCIONES AUXILIARES ---
-def convert_doc_to_docx(doc_file):
-    """Convierte archivos .doc antiguos a .docx usando LibreOffice."""
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = os.path.join(tmpdir, "input.doc")
-            output_path = os.path.join(tmpdir, "input.docx")
-            with open(input_path, "wb") as f:
-                f.write(doc_file.read())
-            subprocess.run(["soffice", "--headless", "--convert-to", "docx", "--outdir", tmpdir, input_path], check=True)
-            return output_path
-    except Exception as e:
-        st.error(f"❌ Error al convertir .doc: {e}")
-        return None
-
 def extract_text_from_docx(file):
+    """Extrae texto de archivos .docx"""
     try:
         doc = Document(file)
         return "\n".join(p.text for p in doc.paragraphs)
     except Exception as e:
         return f"ERROR_DOCX: {e}"
 
+def extract_text_from_doc(file_bytes):
+    """Intenta leer archivos .doc antiguos usando textract"""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".doc") as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
+        text = textract.process(tmp_path).decode("utf-8", errors="ignore")
+        return text
+    except Exception as e:
+        return f"ERROR_DOC: {e}"
+
 def extract_text_from_pdf(file_bytes):
+    """Aplica OCR en español para PDFs"""
     try:
         pages = convert_from_bytes(file_bytes)
         text = ""
@@ -94,12 +94,7 @@ if st.button("🚀 Procesar antecedentes") and uploaded_files:
             if file_ext == "docx":
                 text = extract_text_from_docx(file)
             elif file_ext == "doc":
-                converted = convert_doc_to_docx(file)
-                if converted:
-                    text = extract_text_from_docx(converted)
-                else:
-                    st.error(f"No se pudo convertir {file.name}")
-                    continue
+                text = extract_text_from_doc(file.read())
             else:
                 text = extract_text_from_pdf(file.read())
 
