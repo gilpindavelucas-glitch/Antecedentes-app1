@@ -4,7 +4,6 @@ import pytesseract
 from pytesseract import Output
 from pdf2image import convert_from_bytes
 from docx import Document
-import textract
 import tempfile, os, zipfile, io, re
 from datetime import datetime
 from PIL import Image
@@ -20,7 +19,7 @@ st.set_page_config(
 if "base_color" not in st.session_state:
     st.session_state.base_color = "#003399"  # Azul Ford
 
-# --- ENCABEZADO ---
+# --- BARRA SUPERIOR ---
 col_logo, col_title, col_conf = st.columns([1, 6, 1])
 with col_logo:
     st.image("logo_ford_fiorasi.png", width=140)
@@ -37,31 +36,18 @@ with col_conf:
 st.write("---")
 
 # --- SUBIR ARCHIVOS ---
-st.subheader("📂 Seleccione los archivos (.pdf / .doc / .docx)")
-uploaded_files = st.file_uploader("Arrastre o seleccione múltiples archivos", type=["pdf", "docx", "doc"], accept_multiple_files=True)
+st.subheader("📂 Seleccione los archivos (.pdf / .docx)")
+uploaded_files = st.file_uploader("Arrastre o seleccione múltiples archivos", type=["pdf", "docx"], accept_multiple_files=True)
 
 # --- FUNCIONES AUXILIARES ---
 def extract_text_from_docx(file):
-    """Extrae texto de archivos .docx"""
     try:
         doc = Document(file)
         return "\n".join(p.text for p in doc.paragraphs)
     except Exception as e:
         return f"ERROR_DOCX: {e}"
 
-def extract_text_from_doc(file_bytes):
-    """Intenta leer archivos .doc antiguos usando textract"""
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".doc") as tmp:
-            tmp.write(file_bytes)
-            tmp_path = tmp.name
-        text = textract.process(tmp_path).decode("utf-8", errors="ignore")
-        return text
-    except Exception as e:
-        return f"ERROR_DOC: {e}"
-
 def extract_text_from_pdf(file_bytes):
-    """Aplica OCR en español para PDFs"""
     try:
         pages = convert_from_bytes(file_bytes)
         text = ""
@@ -90,11 +76,8 @@ if st.button("🚀 Procesar antecedentes") and uploaded_files:
 
     for file in uploaded_files:
         with st.spinner(f"Procesando {file.name}..."):
-            file_ext = file.name.lower().split(".")[-1]
-            if file_ext == "docx":
+            if file.name.endswith(".docx"):
                 text = extract_text_from_docx(file)
-            elif file_ext == "doc":
-                text = extract_text_from_doc(file.read())
             else:
                 text = extract_text_from_pdf(file.read())
 
@@ -127,9 +110,11 @@ if st.button("🚀 Procesar antecedentes") and uploaded_files:
             df.to_excel(writer, sheet_name="Base Completa", index=False)
             resumen.to_excel(writer, sheet_name="Resumen por Empleado", index=False)
 
+        # Descargar Excel
         with open(excel_path, "rb") as f:
             st.download_button("⬇️ Descargar Excel", data=f, file_name=excel_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+        # Generar ZIP completo
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
             for root, _, files in os.walk(output_dir):
