@@ -1,0 +1,3 @@
+git add .
+git commit -m "Versión inicial del procesador de antecedentes Ford Fiorasi"
+git push origin main
