@@ -1,12 +1,7 @@
 streamlit
-docx2txt
-PyMuPDF
-PyPDF2
-pytesseract
-Pillow
 pandas
-openpyxl
-dateparser
 python-docx
+pytesseract
 pdf2image
+Pillow
 textract
