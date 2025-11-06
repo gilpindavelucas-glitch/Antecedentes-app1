@@ -9,3 +9,4 @@ openpyxl
 dateparser
 python-docx
 pdf2image
+textract
